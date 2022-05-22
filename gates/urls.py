@@ -1,8 +1,8 @@
 from django.urls import path
-from .views import upsert_member, start
-
+from . import views 
 
 urlpatterns = [
-    path('upsertmember', upsert_member, name='upsert_member'),
-    path('start', start, name='start')
+    path('upsertmember', views.upsert_member, name='upsert_member'),
+    path('upsertstudent', views.upsert_student, name='upsert_student'),
+    path('start', views.start, name='start')
 ]

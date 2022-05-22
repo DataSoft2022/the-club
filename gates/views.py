@@ -1,12 +1,15 @@
 import json
+import datetime as dt
 from datetime import datetime
-from pyzkaccess import ZKAccess, User, UserAuthorize
+from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .models import ZKDevice
-
-
+from .zk_api import upsert_user, upsert_auth, reset_timezone
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+ 
 def print_cards(table):
     zk_devices = ZKDevice.objects.all()
     for zk_device in zk_devices:
@@ -25,7 +28,8 @@ def clear_cards(table):
         zk = ZKAccess(connstr=connstr)
         for u in zk.table(table):
             u.delete()
-        
+  
+@api_view(['POST'])  
 @csrf_exempt
 def upsert_member(request):
     """
@@ -90,20 +94,61 @@ def upsert_member(request):
         response['success'] = False
     else:
         response['success'] = True
-    return JsonResponse(response)  
+    return Response(response)  
 
 
-def upsert_user(zk, card, pin, start_date, end_date):
-        my_user = User(card=str(card), pin=str(pin),
-                               start_time=start_date, end_time=end_date)
-        zk.table(User).upsert(my_user)
+
+def reset_timetable():
+    """
+        reset timezone to custom table created by reset_timezone function
+    """
+    for zk_device in ZKDevice.objects.all():
+        connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
+                    timeout=4000,passwd={zk_device.passwd}'
+        try:
+            zk = ZKAccess(connstr=connstr)
+        except:
+            raise Exception(f"can't connect to device {zk_device.ip}")
+            
+        reset_timezone(zk)
+    return {'success': True}
 
 
-def upsert_auth(zk, pin, timezone=1):
-    auth_user = UserAuthorize(pin=str(pin), doors = (1, 1, 1, 1), timezone_id=timezone)
-    zk.table(UserAuthorize).upsert(auth_user)
-
-    
+@api_view(['POST'])
 @csrf_exempt
+def upsert_student(request):
+    """
+        create new user and set authorization to set of time zones sent by user
+        request: json object contains the following:
+                {
+                    "card": (dict) contains card details (card_no, pin, start_date, end_date),
+                    "schedule": (list) contains list of lists where each list represent [day number, time] 
+                                ex: [3, "17:00:00"] !hint: time should be on the previous form
+                                week days represented as following: Sunday = 1, Monday = 2, .... .
+                }
+    """
+    body = request.data
+    card = body.get('card')
+    schedule = body.get('schedule')
+    for zk_device in ZKDevice.objects.all():
+        connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
+                    timeout=4000,passwd={zk_device.passwd}'
+        try:
+            zk = ZKAccess(connstr=connstr)
+        except:
+            raise Exception(f"can't connect to device {zk_device.ip}")
+        
+        start_date = datetime.fromisoformat(card['start_date'])
+        end_date = datetime.fromisoformat(card['end_date']) + dt.timedelta(1)
+        upsert_user(zk, card['card_no'], card['pin'], start_date, end_date)
+        
+        for day, time in schedule:
+            h = int(time.split(':')[0])
+            timezone_id = int(day) * 100 + h
+            upsert_auth(zk, card['pin'], timezone_id)
+            
+    return Response({'success': True})
+
+@api_view(['GET'])
 def start(request):
-    return HttpResponse(json.dumps({'id':'done'}))
+    return Response({'id':'done'})
