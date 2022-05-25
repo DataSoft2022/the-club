@@ -36,7 +36,7 @@ def upsert_member(request):
     activate cards on every zk device by taking a list of dicts contains
     cards, start date and end date and timezone
     request body the following
-    { 'data' :
+    { 'cards' :
         [
             {
                 cards: (int) card number
@@ -63,8 +63,8 @@ def upsert_member(request):
             }
     """
 
-    body = json.loads(request.body)
-    data = body.get('data')
+    body = request.data
+    data = body.get('cards')
     zk_devices = ZKDevice.objects.all()
     response = {'message': []}
     
@@ -97,8 +97,8 @@ def upsert_member(request):
     return Response(response)  
 
 
-
-def reset_timetable():
+@api_view(['GET'])
+def reset_timetable(request):
     """
         reset timezone to custom table created by reset_timezone function
     """
@@ -111,7 +111,7 @@ def reset_timetable():
             raise Exception(f"can't connect to device {zk_device.ip}")
             
         reset_timezone(zk)
-    return {'success': True}
+    return Response({'success': True})
 
 
 @api_view(['POST'])

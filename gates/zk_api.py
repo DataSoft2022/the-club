@@ -30,16 +30,19 @@ def reset_timezone(zk):
                       and the other two represt time hours ex: 18 equivalent to 6 PM.
         the id = 1 is saved for 24 hours time zone
     """
-    for t in zk.table(Timezone):
-        t.delete()
-    defautl_t = Timezone(timezone_id='1')
+    # for t in zk.table(Timezone):
+        # t.delete()
+    st = datetime.time(0, 0, 0)
+    et = datetime.time(23, 59, 59)
+    defautl_t = Timezone(timezone_id='1', sun_time1 = (st, et), mon_time1=(st, et), tue_time1=(st, et), 
+                        wed_time1=(st, et), thu_time1=(st, et), fri_time1=(st, et), sat_time1=(st, et))
     zk.table(Timezone).upsert(defautl_t)
     after_12_s = datetime.time(0, 0, 0)
     after_12_e = datetime.time(2, 0, 0)
     for d in range(100, 800, 100):
         for t in range(6, 24):
             st = datetime.time(t, 0, 0)
-            et = datetime.time(23, 59, 0)
+            et = datetime.time(23, 59, 59)
             if d == 100:
                 time_zone = Timezone(timezone_id=str(d+t), sun_time1=(st, et), 
                                      mon_time1=(after_12_s, after_12_e))
