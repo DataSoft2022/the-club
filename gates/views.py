@@ -1,15 +1,16 @@
 import json
+import time
+from threading import Thread
 import datetime as dt
 from datetime import datetime
 from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone
-from django.shortcuts import render
-from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .models import ZKDevice
-from .zk_api import upsert_user, upsert_auth, reset_timezone
+from .models import ZKDevice, Gate
+from .zk_api import upsert_user, upsert_auth, reset_timezone, live_capture
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
- 
+
+
 def print_cards(table):
     zk_devices = ZKDevice.objects.all()
     for zk_device in zk_devices:
@@ -28,7 +29,8 @@ def clear_cards(table):
         zk = ZKAccess(connstr=connstr)
         for u in zk.table(table):
             u.delete()
-  
+
+            
 @api_view(['POST'])  
 @csrf_exempt
 def upsert_member(request):
@@ -97,8 +99,8 @@ def upsert_member(request):
     return Response(response)  
 
 
-@api_view(['GET'])
-def reset_timetable(request):
+
+def reset_timetable():
     """
         reset timezone to custom table created by reset_timezone function
     """
@@ -111,7 +113,7 @@ def reset_timetable(request):
             raise Exception(f"can't connect to device {zk_device.ip}")
             
         reset_timezone(zk)
-    return Response({'success': True})
+    return 'done'
 
 
 @api_view(['POST'])
@@ -149,6 +151,42 @@ def upsert_student(request):
             
     return Response({'success': True})
 
-@api_view(['GET'])
+@api_view(['POST'])  
+@csrf_exempt
 def start(request):
-    return Response({'id':'done'})
+    body = request.data
+    try:
+        gate = Gate.objects.get(name= body.get('gate'))
+    except Exception as e:
+        return Response({
+            'success': False
+        })
+    
+    task = body.get('task')
+    if task == 'deactivate':
+        try:
+            gate.active = False
+            gate.save()
+            return Response({'success': True})
+        except:
+            return Response({'success': False})
+        
+    if gate.active:
+        return Response ({'success': True, 'message': 'Gate already active'})
+
+    try:
+        gate.active = True
+        gate.save()
+        devices = gate.zkdevice_set.all()
+        for d in devices:
+            t = Thread(target=live_capture, args=[gate.id, d])
+            t.start()
+    except Exception as e:
+        print(e)
+        return Response({
+            'success': False
+        })
+
+    return Response({
+        'success': True
+    })

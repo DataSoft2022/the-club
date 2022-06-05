@@ -1,7 +1,7 @@
 import json
 import datetime
 from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone
-from .models import ZKDevice
+from .models import ZKDevice, Gate
 
 
 def upsert_user(zk, card, pin, start_date, end_date):
@@ -67,3 +67,47 @@ def reset_timezone(zk):
             
             zk.table(Timezone).upsert(time_zone)
         print(d)
+
+
+#api_secret = aad79b7ba227ba9
+#api_key = fdc04965d6f8c41
+
+        
+def live_capture(gate_id, zk_device):
+     connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
+                    timeout=4000,passwd={zk_device.passwd}'
+     try:
+        zk = ZKAccess(connstr=connstr)
+        print("connect to zk", zk.parameters.ip_address)
+        zk.relays.lock.switch_on(5)
+        while Gate.objects.filter(id=gate_id)[0].active:
+            for door1_event in zk.doors[0].events.poll(timeout=5):
+                print(door1_event)
+                send_data()
+                if door1_event.card and door1_event.card != '0':
+                    print('Got card #', door1_event.card)
+                print("waiting card")
+        print("out man")
+     except:
+         raise Exception(f"can't connect to device {zk_device.ip}")
+
+
+def send_data():
+    import requests
+    import json
+
+    url = "http://103.136.40.46:72/api/resource/Gates"
+
+    payload = json.dumps({
+        "data": {
+            "num": 23234
+        }
+    })
+    headers = {
+        'Authorization': 'token fdc04965d6f8c41:aad79b7ba227ba9',
+        'Content-Type': 'application/json',
+    }
+
+    response = requests.request("POST", url, headers=headers, data=payload)
+
+    print(response.text)
