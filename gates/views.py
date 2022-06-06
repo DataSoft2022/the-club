@@ -153,7 +153,14 @@ def upsert_student(request):
 
 @api_view(['POST'])  
 @csrf_exempt
-def start(request):
+def live(request):
+    """
+    send gate name and task = (activate, deactivate)
+    {
+    "gate" = "Gate 4",
+    "task" = "activate"
+    }
+    """
     body = request.data
     try:
         gate = Gate.objects.get(name= body.get('gate'))
@@ -179,8 +186,9 @@ def start(request):
         gate.save()
         devices = gate.zkdevice_set.all()
         for d in devices:
-            t = Thread(target=live_capture, args=[gate.id, d])
-            t.start()
+            live_capture(gate.id, d)
+            # t = Thread(target=live_capture, args=[gate.id, d])
+            # t.start()
     except Exception as e:
         print(e)
         return Response({
@@ -190,3 +198,4 @@ def start(request):
     return Response({
         'success': True
     })
+

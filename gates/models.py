@@ -16,3 +16,15 @@ class ZKDevice(models.Model):
     
     def __str__(self):
         return self.ip
+
+
+class LogHistory(models.Model):
+    Gate = models.ForeignKey(Gate, on_delete=models.CASCADE)
+    ip = models.ForeignKey(ZKDevice, on_delete=models.CASCADE)
+    card = models.CharField(max_length=15)
+    pin = models.CharField(max_length=10)
+    time = models.DateTimeField()
+
+    def __str__(self):
+        return f"{self.Gate} -  {self.ip}  - {self.card}  - {self.pin}  - {str(self.time)}"
+    

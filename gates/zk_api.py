@@ -2,6 +2,7 @@ import json
 import datetime
 from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone
 from .models import ZKDevice, Gate
+import time
 
 
 def upsert_user(zk, card, pin, start_date, end_date):
@@ -83,9 +84,9 @@ def live_capture(gate_id, zk_device):
         while Gate.objects.filter(id=gate_id)[0].active:
             for door1_event in zk.doors[0].events.poll(timeout=5):
                 print(door1_event)
-                send_data()
                 if door1_event.card and door1_event.card != '0':
                     print('Got card #', door1_event.card)
+                    send_data()
                 print("waiting card")
         print("out man")
      except:
@@ -111,3 +112,12 @@ def send_data():
     response = requests.request("POST", url, headers=headers, data=payload)
 
     print(response.text)
+
+
+
+def get_history():
+   print("hi i started")
+
+def play_with():
+    print("playing")
+    
