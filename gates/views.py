@@ -5,43 +5,22 @@ import datetime as dt
 from datetime import datetime
 from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone
 from django.views.decorators.csrf import csrf_exempt
-from .models import ZKDevice, Gate
+from .models import ZKDevice, Gate, FaildMember, FaildTimezone
 from .zk_api import upsert_user, upsert_auth, reset_timezone, live_capture
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-
-
-def print_cards(table):
-    zk_devices = ZKDevice.objects.all()
-    for zk_device in zk_devices:
-        connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
-                    timeout=4000,passwd={zk_device.passwd}'
-        zk = ZKAccess(connstr=connstr)
-        for u in zk.table(table):
-            print(u)
-            
-def clear_cards(table):
-    
-    zk_devices = ZKDevice.objects.all()
-    for zk_device in zk_devices:
-        connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
-                    timeout=4000,passwd={zk_device.passwd}'
-        zk = ZKAccess(connstr=connstr)
-        for u in zk.table(table):
-            u.delete()
 
             
 @api_view(['POST'])  
 @csrf_exempt
 def upsert_member(request):
-    """
-    activate cards on every zk device by taking a list of dicts contains
+    """activate cards on every zk device by taking a list of dicts contains
     cards, start date and end date and timezone
     request body the following
     { 'cards' :
         [
             {
-                cards: (int) card number
+                card_no: (int) card number
                 start_date: (datetime-isoformat) starting date of the card 
                 end_date: (datetime-isoformat) ending date of the card
                 timezone: (int) timezone id !Hint: to enable all times timezone=1
@@ -53,21 +32,15 @@ def upsert_member(request):
                         'success': True || False,
                         'message': list of error messages in case success=False
                     }
-    curl example:
-        curl -X POST 'http://127.0.0.1:8000/gates/addmember'
-        --data '{"cards": ['231', '12312'], "start_date": "2022-03-12", "end_date":"2023-02-12"}'
-        --header  'Content-Type: application/json'
-
-        response:
-            {
-                'success': True,
-                'message': []
-            }
     """
 
     body = request.data
     data = body.get('cards')
-    zk_devices = ZKDevice.objects.all()
+    device_id = body.get('device')
+    if not device_id:
+        zk_devices = ZKDevice.objects.all()
+    else:
+        zk_devices = ZKDevice.objects.filter(id=device_id)
     response = {'message': []}
     
     for zk_device in zk_devices:
@@ -75,81 +48,91 @@ def upsert_member(request):
                     timeout=4000,passwd={zk_device.passwd}'
         try:
             zk = ZKAccess(connstr=connstr)
-        except:
-            response['message'].append(f"can't connect to {zk_device.ip}")
-            continue
-
-        for d in data:
-            card = d['card']
-            pin = d['pin']
-            start_date = datetime.fromisoformat(d['start_date'])
-            end_date = datetime.fromisoformat(d['end_date'])
-            try:            
+            for d in data:
+                card = d['card_no']
+                pin = d['pin']
+                start_date = datetime.fromisoformat(d['start_date'])
+                end_date = datetime.fromisoformat(d['end_date'])
                 upsert_user(zk, card, pin, start_date, end_date)
                 upsert_auth(zk, pin)
-            except:
-                response['message'] = 'make sure the data is correct'
-                response['success'] = False
-                return JsonResponse(response)
 
-    if len(response['message']) > 0:
-        response['success'] = False
-    else:
-        response['success'] = True
+                exist = FaildMember.objects.filter(zk_device=zk_device, pin=d['pin']).exists()
+                if exist:
+                    FaildMember.objects.get(zk_device=zk_device, pin=d['pin']).delete()
+        except:
+            response['message'].append(f"can't connect to {zk_device.gate.name} with device {zk_device.ip}")
+            for d in data:
+                exist = FaildMember.objects.filter(zk_device=zk_device, pin=d['pin']).exists()
+                if not exist:
+                    member = FaildMember.objects.create(zk_device=zk_device,
+                                                        category="Member",
+                                                        card=d['card_no'],
+                                                        pin=d['pin'],
+                                                        start_date=d['start_date'],
+                                                        end_date=d['end_date'])
+                    member.save()
+                
+       
+    response['success'] = len(response['message']) == 0
     return Response(response)  
 
-
-
-def reset_timetable():
-    """
-        reset timezone to custom table created by reset_timezone function
-    """
-    for zk_device in ZKDevice.objects.all():
-        connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
-                    timeout=4000,passwd={zk_device.passwd}'
-        try:
-            zk = ZKAccess(connstr=connstr)
-        except:
-            raise Exception(f"can't connect to device {zk_device.ip}")
-            
-        reset_timezone(zk)
-    return 'done'
 
 
 @api_view(['POST'])
 @csrf_exempt
 def upsert_student(request):
-    """
-        create new user and set authorization to set of time zones sent by user
+    """create new user and set authorization to set of time zones sent by user
         request: json object contains the following:
                 {
                     "card": (dict) contains card details (card_no, pin, start_date, end_date),
                     "schedule": (list) contains list of lists where each list represent [day number, time] 
-                                ex: [3, "17:00:00"] !hint: time should be on the previous form
+                                ex: [3, "17:00:00"] !hint: time should be on isoformat form
                                 week days represented as following: Sunday = 1, Monday = 2, .... .
                 }
     """
     body = request.data
     card = body.get('card')
     schedule = body.get('schedule')
-    for zk_device in ZKDevice.objects.all():
+    device_id = body.get('device')
+    response = {'message': []}
+    if device_id:
+        zk_devices = ZKDevice.objects.filter(id=device_id)
+    else:
+        zk_devices = ZKDevice.objects.all()
+        
+    for zk_device in zk_devices:
         connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
                     timeout=4000,passwd={zk_device.passwd}'
         try:
             zk = ZKAccess(connstr=connstr)
+            start_date = datetime.fromisoformat(card['start_date'])
+            end_date = datetime.fromisoformat(card['end_date']) + dt.timedelta(1)
+            upsert_user(zk, card['card_no'], card['pin'], start_date, end_date)
+        
+            for day, time in schedule:
+                h = int(time.split(':')[0])
+                timezone_id = int(day) * 100 + h
+                upsert_auth(zk, card['pin'], timezone_id)
         except:
-            raise Exception(f"can't connect to device {zk_device.ip}")
+            response['message'].append(f"can't connect to {zk_device.gate.name} with device {zk_device.ip}")
+            exist = FaildMember.objects.filter(zk_device=zk_device, pin=card['pin']).exists()
+            if not exist:
+                 member = FaildMember.objects.create(zk_device=zk_device,
+                                                        category="Student",
+                                                        card=card['card_no'],
+                                                        pin=card['pin'],
+                                                        start_date=card['start_date'],
+                                                        end_date=card['end_date'])
+                 member.save()
+                 for day, time in schedule:
+                     timezone = FaildTimezone(member=member, day=day, time=time)
+                     timezone.save()
         
-        start_date = datetime.fromisoformat(card['start_date'])
-        end_date = datetime.fromisoformat(card['end_date']) + dt.timedelta(1)
-        upsert_user(zk, card['card_no'], card['pin'], start_date, end_date)
-        
-        for day, time in schedule:
-            h = int(time.split(':')[0])
-            timezone_id = int(day) * 100 + h
-            upsert_auth(zk, card['pin'], timezone_id)
             
-    return Response({'success': True})
+
+    response['success'] = len(response['message']) == 0
+
+    return Response(response)
 
 @api_view(['POST'])  
 @csrf_exempt

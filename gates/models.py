@@ -19,12 +19,35 @@ class ZKDevice(models.Model):
 
 
 class LogHistory(models.Model):
-    Gate = models.ForeignKey(Gate, on_delete=models.CASCADE)
-    ip = models.ForeignKey(ZKDevice, on_delete=models.CASCADE)
+    gate = models.ForeignKey(Gate, on_delete=models.CASCADE)
+    zk_device = models.ForeignKey(ZKDevice, on_delete=models.CASCADE)
     card = models.CharField(max_length=15)
-    pin = models.CharField(max_length=10)
+    pin = models.CharField(max_length=15)
     time = models.DateTimeField()
 
     def __str__(self):
-        return f"{self.Gate} -  {self.ip}  - {self.card}  - {self.pin}  - {str(self.time)}"
+        return f"Gate: {self.gate}-------Card: {self.card}---------Time: {str(self.time)}"
     
+
+
+class FaildMember(models.Model):
+    cat = [("Student", "Student"),
+           ("Member", "Member")]
+    zk_device = models.ForeignKey(ZKDevice, on_delete=models.CASCADE)
+    category = models.CharField(max_length=10, choices=cat)
+    card = models.CharField(max_length=15)
+    pin = models.CharField(max_length=15)
+    start_date =  models.CharField(max_length=10)
+    end_date = models.CharField(max_length=10)
+
+    def __str__(self):
+        return f"type: {self.category} ---- zk: {self.zk_device.ip} ----- start: {self.start_date} ---- end: {self.end_date} ---- pin: {self.pin}"
+
+
+class FaildTimezone(models.Model):
+    member = models.ForeignKey(FaildMember, on_delete=models.CASCADE)
+    day = models.IntegerField()
+    time = models.CharField(max_length=8)
+
+    def __str__(self):
+        return f"{self.member.id} ------ day: {self.day} ----- time: {self.time}"

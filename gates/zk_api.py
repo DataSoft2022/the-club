@@ -1,7 +1,7 @@
 import json
 import datetime
-from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone
-from .models import ZKDevice, Gate
+from pyzkaccess import ZKAccess, User, UserAuthorize, Timezone, Transaction
+from .models import ZKDevice, Gate, LogHistory
 import time
 
 
@@ -21,7 +21,16 @@ def upsert_auth(zk, pin, timezone=1):
     """
     auth_user = UserAuthorize(pin=str(pin), doors = (1, 1, 1, 1), timezone_id=timezone)
     zk.table(UserAuthorize).upsert(auth_user)
-    
+
+
+def connect_zk(zk_device):
+    connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
+                    timeout=4000,passwd={zk_device.passwd}'
+    try:
+        return ZKAccess(connstr=connstr)
+    except:
+        raise Exception(f"Can't connect t device {zk_device}")
+
     
 def reset_timezone(zk):
     """
@@ -75,10 +84,8 @@ def reset_timezone(zk):
 
         
 def live_capture(gate_id, zk_device):
-     connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
-                    timeout=4000,passwd={zk_device.passwd}'
-     try:
-        zk = ZKAccess(connstr=connstr)
+    zk = connect_zk(zk_device)
+    try:
         print("connect to zk", zk.parameters.ip_address)
         zk.relays.lock.switch_on(5)
         while Gate.objects.filter(id=gate_id)[0].active:
@@ -89,8 +96,8 @@ def live_capture(gate_id, zk_device):
                     send_data()
                 print("waiting card")
         print("out man")
-     except:
-         raise Exception(f"can't connect to device {zk_device.ip}")
+    except:
+        raise Exception(f"can't connect to device {zk_device.ip}")
 
 
 def send_data():
@@ -116,8 +123,47 @@ def send_data():
 
 
 def get_history():
-   print("hi i started")
+    print("start syncing")
+    zks_devices = ZKDevice.objects.all()
+    for zk_device in zks_devices:
+        gate = ZKDevice.objects.get(id=zk_device.id).gate
+        zk = connect_zk(zk_device)
+        log = zk.table(Transaction)
+        for l in log:
+            history = LogHistory.objects.create(gate = gate,
+                                                zk_device = zk_device,
+                                                card = l.card,
+                                                pin = l.pin,
+                                                time = l.time)
+            try:
+                history.save()
+            except:
+                print("error")
+                pass
+    print("syncing done")
+    return {'success': True}
+
+
+   
+
+
 
 def play_with():
     print("playing")
     
+
+
+
+def reset_all_zk_timezone():
+    """reset timezone to custom table created by reset_timezone function
+    """
+    for zk_device in ZKDevice.objects.all():
+        connstr = f'protocol=TCP,ipaddress={zk_device.ip},port={zk_device.port},\
+                    timeout=4000,passwd={zk_device.passwd}'
+        try:
+            zk = ZKAccess(connstr=connstr)
+        except:
+            raise Exception(f"can't connect to device {zk_device.ip}")
+            
+        reset_timezone(zk)
+    return 'done'
