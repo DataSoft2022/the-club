@@ -2,7 +2,7 @@ from django.db import models
 
 # connstr = 'protocol=TCP,ipaddress=192.168.1.201,port=4370,timeout=4000,passwd='
 class Gate(models.Model):
-    name = models.CharField(max_length=30, null=False)
+    name = models.CharField(max_length=30, null=False, unique=True)
     active = models.BooleanField(default = False)
 
     def __str__(self):
@@ -10,7 +10,7 @@ class Gate(models.Model):
 
 class ZKDevice(models.Model):
     gate = models.ForeignKey(Gate, on_delete=models.CASCADE)
-    ip = models.CharField(max_length=20)
+    ip = models.CharField(max_length=20, unique=True)
     port = models.CharField(max_length=5)
     passwd = models.CharField(max_length=100,  blank=True)
     
